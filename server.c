@@ -18,8 +18,11 @@
 #define HEADER_KV_SIZE 32
 #define BODY_SZ     1024*1024
 #define URL_SZ      32
+#define RESP_SIZE 1024*1024
 
-#define GET_RESPOSNE "HTTP/1.1 200 OK\r\n"
+#define GET_RESPONSE "HTTP/1.1 200 OK\r\n"
+#define POST_RESPONSE "HTTP/1.1 200 OK\r\n\r\n"
+#define POST_RESPONSE_END "\r\n\r\n"
 
 http_parser_settings settings;
 
@@ -42,7 +45,6 @@ struct http_request {
 int
 http_on_msg_begin(http_parser *parser)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 	struct http_request *r = parser->data;
 
 	r->message_begin = 1;
@@ -53,7 +55,6 @@ http_on_msg_begin(http_parser *parser)
 int
 http_on_msg_end(http_parser *parser)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 	struct http_request *r = parser->data;
 
 	r->message_end = 1;
@@ -63,7 +64,6 @@ http_on_msg_end(http_parser *parser)
 int
 http_on_header_end(http_parser *parser)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 	struct http_request *r = parser->data;
 
 	r->header_end = 1;
@@ -74,7 +74,6 @@ http_on_header_end(http_parser *parser)
 int
 http_on_url(http_parser* parser, const char *at, size_t length)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 	struct http_request *r = parser->data;
 
 	assert(length <= URL_SZ);
@@ -86,7 +85,6 @@ http_on_url(http_parser* parser, const char *at, size_t length)
 int
 http_on_header_field(http_parser* parser, const char *at, size_t length)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 	struct http_request *r = parser->data;
 
 	if (r->last_was_value) r->nheaders ++;
@@ -101,7 +99,6 @@ http_on_header_field(http_parser* parser, const char *at, size_t length)
 int
 http_on_header_value(http_parser* parser, const char *at, size_t length)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 	struct http_request *r = parser->data;
 
 	r->last_was_value = 1;
@@ -113,12 +110,10 @@ http_on_header_value(http_parser* parser, const char *at, size_t length)
 int
 http_on_body(http_parser* parser, const char *at, size_t length)
 {
-	printf("%s:%d\n", __func__, __LINE__);
 	struct http_request *r = parser->data;
 
 	assert(length <= BODY_SZ);
 	memcpy(r->body, at, length);
-	printf("%s:%d %d\n", __func__, __LINE__, length);
 	r->bodylen = length;
 
 	return 0;
@@ -132,6 +127,8 @@ http_server_fn(void *d)
 	int sock = *((int *)d);
 	char *buf = (char *)malloc(RCV_MAX);
 	int rcvd = 0, r = 0;
+	int len;
+	char *resp;
 
 	http_parser *parser = malloc(sizeof(http_parser));
 	http_parser_init(parser, HTTP_REQUEST);
@@ -141,9 +138,7 @@ http_server_fn(void *d)
 	memset(buf, 0, RCV_MAX);
 	while ((r = recv(sock, (buf + rcvd), RCV_MAX, 0)) > 0) {
 		rcvd += r;
-		printf("%s:%d\n", __func__, __LINE__);
 		if (r < RCV_MAX) break;
-		printf("%s:%d\n", __func__, __LINE__);
 		buf = (char *)realloc(buf, rcvd + RCV_MAX);
 		memset(buf + rcvd, 0, RCV_MAX);
 	}
@@ -154,7 +149,7 @@ http_server_fn(void *d)
 	for (i = 0; i < hreq->nheaders; i++) {
 		printf("[%s]:[%s]\n", hreq->headers[i].header, hreq->headers[i].value);
 	}
-	printf("Body: %s, %d\n", hreq->body, strlen(hreq->body));
+	printf("Body: %s, %lu\n", hreq->body, strlen(hreq->body));
 	int fd = open("tmp.png", O_CREAT | O_RDWR | O_TRUNC, S_IRWXU | S_IRWXO | S_IRWXG);
 	if (fd < 0) {
 		perror("open");
@@ -169,10 +164,17 @@ http_server_fn(void *d)
 
 
 skip:
-	printf("Rcvd: [[%s]]\n", buf);
-	if (send(sock, GET_RESPOSNE, strlen(GET_RESPOSNE), 0) < 0) {
+	len = strlen(POST_RESPONSE) + hreq->bodylen + strlen(POST_RESPONSE_END);
+	resp = (char *)malloc(len+1);
+	assert(resp);
+	resp[len] = '\0';
+	strcpy(resp, POST_RESPONSE);
+	memcpy(resp+strlen(POST_RESPONSE), hreq->body, hreq->bodylen);
+	strcpy(resp+strlen(POST_RESPONSE)+hreq->bodylen, POST_RESPONSE_END);
+	if (send(sock, resp, len, 0) < 0) {
 		perror("send");
 	}
+	free(resp);
 
 	free(hreq);
 	free(parser);
