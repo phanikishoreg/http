@@ -150,7 +150,7 @@ http_server_fn(void *d)
 		printf("[%s]:[%s]\n", hreq->headers[i].header, hreq->headers[i].value);
 	}
 	printf("Body: %s, %lu\n", hreq->body, strlen(hreq->body));
-	int fd = open("tmp.png", O_CREAT | O_RDWR | O_TRUNC, S_IRWXU | S_IRWXO | S_IRWXG);
+	int fd = open("tmp_srv.png", O_CREAT | O_RDWR | O_TRUNC, S_IRWXU | S_IRWXO | S_IRWXG);
 	if (fd < 0) {
 		perror("open");
 		goto skip;

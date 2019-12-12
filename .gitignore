@@ -1,4 +1,6 @@
 server
+client
+*.png
 # Prerequisites
 *.d
 
